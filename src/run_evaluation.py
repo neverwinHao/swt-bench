@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from tqdm import tqdm
 from typing import List, Tuple, Optional
+from threading import Lock
 
 from src.auxillary_src.extract_patches import remove_binary_diffs
 from src.constants import (
@@ -43,8 +44,6 @@ class EvaluationError(Exception):
         self.logger = logger
 
     def __str__(self):
-        log_msg = traceback.format_exc()
-        self.logger.info(log_msg)
         return (
             f"{self.instance_id}: {super().__str__()}\n"
             f"Check ({self.log_file}) for more information."
@@ -164,7 +163,7 @@ def run_instance(
     exec_spec.run_id = run_id
     exec_spec.compute_coverage = compute_coverage
     instance_id = test_spec.instance_id
-
+    print(f"Running instance {instance_id}...")
     patch_id_base = pred.get("model_name_or_path", "None").replace("/", "__")
     exec_spec.patch_id = patch_id_base
 
@@ -213,6 +212,7 @@ def run_eval_exec_spec(exec_spec: ExecSpec, model_patch: str, log_dir: Optional[
         f.write(model_patch)
 
     if (log_dir / "test_output.txt").exists():
+        close_logger(logger)
         return instance_id, (log_dir / "test_output.txt")
 
     link_image_build_dir(log_dir, exec_spec.instance_image_key)
@@ -286,6 +286,10 @@ def run_instances(
 
     # run instances in parallel
     print(f"Running {len(instances)} instances...")
+    count = 0
+    count_lock = Lock()
+    skip_instances = {'django__django-11141', 'django__django-12273', 'django__django-12308', 'sympy__sympy-13551', 'sympy__sympy-18211', 'sympy__sympy-24443', 'sympy__sympy-15349', 'sympy__sympy-21930', 'pylint-dev__pylint-7277'}
+    skip_instances = {}
     with tqdm(total=len(instances), smoothing=0) as pbar:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
             # Create a future for running each instance
@@ -312,6 +316,9 @@ def run_instances(
             # Wait for each future to complete
             try:
                 for future in as_completed(futures):
+                    with count_lock:
+                        count += 1
+                        print(f"Progress: {count}/{len(instances)} ({count*100//len(instances)}%)")
                     # Update progress bar
                     pbar.update(1)
                     # check if instance ran successfully

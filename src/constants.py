@@ -381,7 +381,7 @@ MAP_VERSION_TO_INSTALL_MATPLOTLIB = {
         "packages": "environment.yml",
         "install": "python -m pip install -e .",
         "pre_install": [
-            "apt-get -y update && apt-get -y upgrade && apt-get install -y imagemagick ffmpeg texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-luatex cm-super dvipng"
+            "apt-get -y update && apt-get install -y imagemagick ffmpeg texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-luatex cm-super dvipng"
         ],
         "pip_packages": [
             "contourpy==1.1.0",
@@ -410,7 +410,7 @@ MAP_VERSION_TO_INSTALL_MATPLOTLIB.update(
             "packages": "requirements.txt",
             "install": "python -m pip install -e .",
             "pre_install": [
-                "apt-get -y update && apt-get -y upgrade && apt-get install -y imagemagick ffmpeg libfreetype6-dev pkg-config texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-luatex cm-super"
+                "apt-get -y update && apt-get install -y imagemagick ffmpeg libfreetype6-dev pkg-config texlive texlive-latex-extra texlive-fonts-recommended texlive-xetex texlive-luatex cm-super"
             ],
             "pip_packages": ["pytest", "ipython"],
         }
@@ -424,7 +424,7 @@ MAP_VERSION_TO_INSTALL_MATPLOTLIB.update(
             "packages": "requirements.txt",
             "install": "python -m pip install -e .",
             "pre_install": [
-                "apt-get -y update && apt-get -y upgrade && apt-get install -y imagemagick ffmpeg libfreetype6-dev pkg-config"
+                "apt-get -y update && apt-get install -y imagemagick ffmpeg libfreetype6-dev pkg-config"
             ],
             "pip_packages": ["pytest"],
         }
@@ -437,7 +437,7 @@ MAP_VERSION_TO_INSTALL_MATPLOTLIB.update(
             "python": "3.5",
             "install": "python setup.py build; python setup.py install",
             "pre_install": [
-                "apt-get -y update && apt-get -y upgrade && && apt-get install -y imagemagick ffmpeg"
+                "apt-get -y update && apt-get install -y imagemagick ffmpeg"
             ],
             "pip_packages": ["pytest"],
             "execute_test_as_nonroot": True,

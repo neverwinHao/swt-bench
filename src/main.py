@@ -63,7 +63,10 @@ def run(
                 predicted_tests = [json.loads(line) for line in f]
         else:
             raise ValueError("Predictions path must be \"gold\", .json, or .jsonl")
-    predicted_tests = {pred["instance_id"]: pred for pred in predicted_tests}
+    if isinstance(predicted_tests, dict):
+        predicted_tests = {k: v for k, v in predicted_tests.items()}
+    else:
+        predicted_tests = {pred["instance_id"]: pred for pred in predicted_tests}
 
     # get dataset from predictions
     dataset = get_dataset_from_preds(dataset_name, split, instance_ids, predicted_tests, run_id, is_swt=is_swt, filter_swt=filter_swt)
@@ -86,7 +89,7 @@ def run(
 
 if __name__ == "__main__":
     parser = ArgumentParser()
-    parser.add_argument("--dataset_name", default="princeton-nlp/SWE-bench_Lite", type=str, help="name of dataset")
+    parser.add_argument("--dataset_name", default="princeton-nlp/SWE-bench", type=str, help="name of dataset")
     # don't switch golden patches
     parser.add_argument(
         "--is_swt", type=str2bool, default=False, help="Indicate that benchmark is extended with RAG, need to handle patches differently"

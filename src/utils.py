@@ -124,6 +124,9 @@ def get_environment_yml_by_commit(repo: str, commit: str, env_name: str) -> str:
             cleaned.append(f"name: {env_name}")
             continue
         cleaned.append(line)
+        # Add nodefaults to channels to avoid conda solver getting stuck
+        if line.strip() == "- conda-forge":
+            cleaned.append("  - nodefaults")
 
     return "\n".join(cleaned)
 
