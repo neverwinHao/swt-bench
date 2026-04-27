@@ -73,7 +73,13 @@ def get_logs_eval(
         # remove installation logs
     if "trace.py --count -C coverage.cover" in raw_content:
         # NOTE: does not work when not computing coverage
-        content = re.split(r"\n\+ python3 [^\n]*trace.py --count -C coverage.cover [^\n]*\n", raw_content, flags=re.MULTILINE)[1]
+        parts = re.split(r"\n\+ python3 [^\n]*trace.py --count -C coverage.cover [^\n]*\n", raw_content, flags=re.MULTILINE)
+        if len(parts) > 1:
+            content = parts[1]
+        else:
+            print(f"[DEBUG] Regex split failed for log_fp={log_fp}")
+            print(f"[DEBUG] trace.py lines: {re.findall(r'.*trace.py --count -C coverage.cover.*', raw_content)}")
+            content = raw_content
     else:
         content = raw_content
     # remove coverage dumps

@@ -268,6 +268,7 @@ def build_test_selection_metadata(
     build_mode: str = "api",
     merge: bool = False,
     open_file_limit: int = 4096,
+    code_preds_paths: Optional[List[str]] = None,
 ):
     """
     Main entry point: build test selection metadata.
@@ -282,15 +283,24 @@ def build_test_selection_metadata(
     dataset_map = {inst["instance_id"]: inst for inst in dataset}
 
     # Load code patches per source
-    code_patch_sources = {}
+    code_patch_sources = {}  # name -> dir path (for dir-based)
+    code_preds_sources = {}  # name -> {instance_id: {model_patch: ...}} (for preds.json-based)
     for cp_dir in code_patch_dirs:
         cp_name = os.path.basename(cp_dir.rstrip("/"))
         code_patch_sources[cp_name] = cp_dir
+    if code_preds_paths:
+        for cp_path in code_preds_paths:
+            # Use parent dir name directly (no splitext to avoid truncating names like gpt-5.4-mini)
+            cp_name = os.path.basename(os.path.dirname(cp_path))
+            code_preds_sources[cp_name] = load_test_preds(cp_path)
 
     # Load test patch predictions per source
     test_patch_sources = {}
     for tp_path in test_preds_paths:
-        tp_name = os.path.splitext(os.path.basename(tp_path))[0]
+        # Use grandparent/parent dir names to distinguish files with the same basename
+        parent = os.path.basename(os.path.dirname(tp_path))
+        fname = os.path.splitext(os.path.basename(tp_path))[0]
+        tp_name = f"{parent}__{fname}" if parent else fname
         test_patch_sources[tp_name] = load_test_preds(tp_path)
 
     # Determine which instances to process
@@ -303,12 +313,22 @@ def build_test_selection_metadata(
             for d in os.listdir(cp_dir):
                 if os.path.isdir(os.path.join(cp_dir, d)):
                     all_cp_ids.add(d)
+        for cp_name, cp_data in code_preds_sources.items():
+            all_cp_ids.update(cp_data.keys())
         all_tp_ids = set()
         for tp_name, tp_data in test_patch_sources.items():
             all_tp_ids.update(tp_data.keys())
         target_ids = sorted(all_cp_ids & all_tp_ids & set(dataset_map.keys()))
 
+    # Load existing results early if merging (to skip already-completed combos)
+    all_results = {}
+    if merge and os.path.isfile(output_path) and os.path.getsize(output_path) > 0:
+        with open(output_path, "r") as f:
+            all_results = json.load(f)
+        print(f"Loaded {len(all_results)} existing instance results for merging")
+
     # Build work items
+    skipped = 0
     work_items = []
     for inst_id in target_ids:
         if inst_id not in dataset_map:
@@ -327,20 +347,36 @@ def build_test_selection_metadata(
                 test_patch = tp_data[inst_id].get("model_patch", "")
                 if not test_patch.strip():
                     continue
+                combo_key = f"{cp_name}__{tp_name}"
+                if inst_id in all_results and combo_key in all_results[inst_id].get("results", {}):
+                    skipped += 1
+                    continue
+                work_items.append(
+                    (instance, code_patch, test_patch, golden_code_patch, cp_name, tp_name)
+                )
+        for cp_name, cp_data in code_preds_sources.items():
+            if inst_id not in cp_data:
+                continue
+            code_patch = cp_data[inst_id].get("model_patch", "")
+            if not code_patch.strip():
+                continue
+            for tp_name, tp_data in test_patch_sources.items():
+                if inst_id not in tp_data:
+                    continue
+                test_patch = tp_data[inst_id].get("model_patch", "")
+                if not test_patch.strip():
+                    continue
+                combo_key = f"{cp_name}__{tp_name}"
+                if inst_id in all_results and combo_key in all_results[inst_id].get("results", {}):
+                    skipped += 1
+                    continue
                 work_items.append(
                     (instance, code_patch, test_patch, golden_code_patch, cp_name, tp_name)
                 )
 
-    print(f"Processing {len(target_ids)} instances x {len(code_patch_sources)} code patches x {len(test_patch_sources)} test patches")
-    print(f"Total work items: {len(work_items)} (each = 4 docker runs: pred_pre/post + base_pre/post)")
-
-    # Load existing results if merging
-    if merge and os.path.isfile(output_path):
-        with open(output_path, "r") as f:
-            all_results = json.load(f)
-        print(f"Loaded {len(all_results)} existing instance results for merging")
-    else:
-        all_results = {}
+    total_code_sources = len(code_patch_sources) + len(code_preds_sources)
+    print(f"Processing {len(target_ids)} instances x {total_code_sources} code patches x {len(test_patch_sources)} test patches")
+    print(f"Total work items: {len(work_items)} (skipped {skipped} already-completed combos)")
 
     # Run evaluations in parallel
     results_lock = Lock()
@@ -388,8 +424,10 @@ def build_test_selection_metadata(
                         "tests_pred": result["tests_pred"],
                         "tests_base": result["tests_base"],
                     }
+                    with open(output_path, "w") as f:
+                        json.dump(all_results, f, indent=2)
 
-    # Write output
+    # Write output (final)
     Path(output_path).parent.mkdir(parents=True, exist_ok=True)
     with open(output_path, "w") as f:
         json.dump(all_results, f, indent=2)
@@ -408,8 +446,12 @@ def build_test_selection_metadata(
 if __name__ == "__main__":
     parser = ArgumentParser(description="Build test selection metadata")
     parser.add_argument(
-        "--code_patch_dirs", nargs="+", required=True,
+        "--code_patch_dirs", nargs="+", default=[],
         help="Directories containing code patches (e.g., Code-Patch-5.2 Code-Patch-5.4mini)",
+    )
+    parser.add_argument(
+        "--code_preds_paths", nargs="+", default=[],
+        help="Paths to code patch prediction JSON files (preds.json format)",
     )
     parser.add_argument(
         "--test_preds_paths", nargs="+", required=True,
@@ -429,6 +471,8 @@ if __name__ == "__main__":
     parser.add_argument("--open_file_limit", type=int, default=4096)
 
     args = parser.parse_args()
+    if not args.code_patch_dirs and not args.code_preds_paths:
+        parser.error("At least one of --code_patch_dirs or --code_preds_paths is required")
     build_test_selection_metadata(
         code_patch_dirs=args.code_patch_dirs,
         test_preds_paths=args.test_preds_paths,
@@ -444,4 +488,5 @@ if __name__ == "__main__":
         build_mode=args.build_mode,
         merge=args.merge,
         open_file_limit=args.open_file_limit,
+        code_preds_paths=args.code_preds_paths,
     )

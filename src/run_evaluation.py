@@ -289,6 +289,7 @@ def run_instances(
     count = 0
     count_lock = Lock()
     skip_instances = {'django__django-11141', 'django__django-12273', 'django__django-12308', 'sympy__sympy-13551', 'sympy__sympy-18211', 'sympy__sympy-24443', 'sympy__sympy-15349', 'sympy__sympy-21930', 'pylint-dev__pylint-7277'}
+    skip_instances = {'matplotlib__matplotlib-23412'}
     skip_instances = {}
     with tqdm(total=len(instances), smoothing=0) as pbar:
         with ThreadPoolExecutor(max_workers=max_workers) as executor:
@@ -311,7 +312,7 @@ def run_instances(
                     timeout,
                     build_mode,
                 )
-                for test_spec in test_specs
+                for test_spec in test_specs if test_spec.instance_id not in skip_instances
             ]
             # Wait for each future to complete
             try:
@@ -454,10 +455,16 @@ def make_run_report(
         image_name = spec.instance_image_key
         if image_name in images:
             unremoved_images.add(image_name)
-    containers = client.containers.list(all=True)
-    for container in containers:
-        if run_id in container.name:
-            unstopped_containers.add(container.name)
+    try:
+        containers = client.containers.list(all=True)
+        for container in containers:
+            try:
+                if run_id in container.name:
+                    unstopped_containers.add(container.name)
+            except Exception:
+                pass
+    except Exception:
+        pass
 
     # print final report
     print(f"Total instances: {len(dataset)}")
